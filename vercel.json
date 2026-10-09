@@ -1,11 +1,8 @@
+
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "installCommand": "npm ci",
+  "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "out",
-  "headers": [
-    {"source": "/data/(.*)", "headers": [{"key": "Cache-Control", "value": "public, max-age=0, must-revalidate"}]},
-    {"source": "/data/samples/(.*)", "headers": [{"key": "Content-Type", "value": "application/octet-stream"}]}
-  ]
+  "installCommand": "npm ci"
 }
