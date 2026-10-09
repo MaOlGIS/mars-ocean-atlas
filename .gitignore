@@ -1,0 +1,27 @@
+node_modules/
+.next/
+out/
+.venv*/
+__pycache__/
+*.pyc
+20261009T122401589809/
+derived/
+test-results/
+playwright-report/
+
+.next-qa/
+.vercel/
+*.tsbuildinfo
+.env*
+*.log
+*.tmp
+# Raw/intermediate planetary rasters and archives (browser PNG/f32/u8 stay tracked)
+*.img
+*.IMG
+*.tif
+*.tiff
+*.npy
+*.npz
+*.tar
+*.tar.gz
+*.zip
