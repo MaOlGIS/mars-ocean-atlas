@@ -7,13 +7,14 @@
     "build": "npm run verify:assets && next build && node scripts/verify-assets.mjs --export",
     "start": "node scripts/serve-static.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/ocean.test.ts",
+    "test": "node --experimental-strip-types --test tests/ocean.test.ts tests/labels.test.ts",
     "test:data": "python -m unittest discover -s tests -p 'test_*.py'",
     "process:data": "python scripts/process_mola.py",
     "test:browser": "playwright test",
     "verify:sources": "python scripts/verify_originals.py",
     "verify:assets": "node scripts/verify-assets.mjs",
-    "test:production": "ATLAS_PRODUCTION=1 playwright test"
+    "test:production": "ATLAS_PRODUCTION=1 playwright test",
+    "process:names": "python scripts/process_nomenclature.py"
   },
   "dependencies": {
     "next": "^16.0.0",

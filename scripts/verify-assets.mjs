@@ -41,3 +41,13 @@ if(process.argv.includes('--record')) {
 } else assert.deepEqual(index,JSON.parse(await readFile('docs/browser-assets.json','utf8')),'Asset hashes differ: investigate, then explicitly record after validated regeneration');
 if(exported) await readFile('out/index.html');
 console.log(`${root}: verified ${expected.length} files, ${total} bytes, complete tile/sample matrix and SHA-256 hashes`);
+const namesPath=exported?'out/nomenclature/mars.json':'public/nomenclature/mars.json';
+const namesBytes=await readFile(namesPath),names=JSON.parse(namesBytes);
+assert.equal(names.body,'Mars');assert.equal(names.latitudeType,'planetocentric');assert.equal(names.longitudeDirection,'east');
+assert.equal(names.version,1);assert.equal(new Set(names.features.map(f=>f.id)).size,names.features.length);
+for(const f of names.features){assert(f.name&&f.type&&f.code&&f.id>0);assert(f.longitude>=0&&f.longitude<360&&f.latitude>=-90&&f.latitude<=90);}
+for(const [name,id,latitude,longitude] of [['Olympus Mons',4453,18.6528,226.1975],['Valles Marineris',6288,-14.0059,301.4123],['Hellas Planitia',2432,-42.4301,70.5025]]) {
+ const f=names.features.find(f=>f.id===id);assert(f);assert.equal(f.name,name);assert.equal(f.latitude,latitude);assert.equal(f.longitude,longitude);
+}
+if(exported)assert.deepEqual(namesBytes,await readFile('public/nomenclature/mars.json'),'Gazetteer export must match the committed snapshot');
+console.log(`${namesPath}: verified ${names.features.length} Mars feature names, ${namesBytes.length} bytes`);

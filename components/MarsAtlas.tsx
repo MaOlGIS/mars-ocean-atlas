@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { coverageAt, heightAt, coordinates, signedMeters, waterDepth, type Manifest } from '@/lib/ocean';
+import FeatureLabels from './FeatureLabels';
 import { MarsRenderer, type Inspection, type Location } from '@/lib/renderer';
 
 function Icon({ name }: { name: 'reset'|'plus'|'minus'|'fit'|'info'|'cross' }) {
@@ -84,6 +85,7 @@ export default function MarsAtlas() {
         {[60,30,0,-30,-60].map(lat=>{const y=project(lat,180).y;return y>25&&y<view.height-90?<g key={lat}><text x="17" y={y}>{lat===0?'EQ':`${Math.abs(lat)}°${lat>0?'N':'S'}`}</text></g>:null;})}
         {[0,60,120,180,240,300].map(lon=>{const point=project(-90,lon);return point.x>35&&point.x<view.width-35&&point.y>0&&point.y<view.height-90?<text key={lon} x={point.x} y={point.y+20} textAnchor="middle">{lon}°E</text>:null;})}
       </svg>
+      <FeatureLabels view={view} onLocate={feature=>rendererRef.current?.locate(feature.latitude,feature.longitude)}/>
       <div className="map-title"><span className="eyebrow">A DIFFERENT BLUE PLANET</span><h2>What if Mars<br/>had oceans?</h2><p>Explore the terrain. Raise the water.<br/>Discover a world beneath the surface.</p></div>
       <div className="map-actions" aria-label="Map navigation">
         <button aria-label="Zoom in" onClick={()=>rendererRef.current?.zoom(1.5)}><Icon name="plus"/></button><button aria-label="Zoom out" onClick={()=>rendererRef.current?.zoom(1/1.5)}><Icon name="minus"/></button><button aria-label="Fit entire planet" onClick={()=>rendererRef.current?.fit()}><Icon name="fit"/></button>

@@ -18,7 +18,11 @@ npm run build
 npm start
 ```
 
-The export is in `out/`; `npm start` serves those static files locally. No remote repository or deployment has been created. There is no elevation server dependency: static hosting serves precomputed tiles and binary lookup chunks. See [exact GitHub and Vercel publishing instructions](docs/DEPLOYMENT.md). The optional Google Fonts CSS falls back to system fonts when offline.
+The export is in `out/`; `npm start` serves those static files locally. The existing Vercel deployment uses the same static hosting architecture. There is no elevation server dependency: static hosting serves precomputed tiles and binary lookup chunks. See [exact GitHub and Vercel publishing instructions](docs/DEPLOYMENT.md). The optional Google Fonts CSS falls back to system fonts when offline.
+
+## Geographical feature names
+
+A separate interactive layer displays official USGS / IAU Mars names, with zoom-dependent collision-free labels, type filters, feature information, and search. Feature names remain visible under hypothetical oceans. The committed 394 KB planetary JSON snapshot needs no live USGS service or deployment-time processing. See [source, coordinate verification, processing, and attribution](docs/NOMENCLATURE.md).
 
 ## Regenerate the data
 

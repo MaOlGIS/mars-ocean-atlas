@@ -131,6 +131,10 @@ export class MarsRenderer {
     this.camera = { x: .5, y: .25, scale: Math.max(180, Math.min(this.width - (this.width > 850 ? 390 : 38), (this.height - 145) * 2)) };
     this.requestFrame();
   }
+  locate(latitude:number,longitude:number) {
+    this.camera={x:wrapLongitude(longitude)/360,y:(90-latitude)/360,scale:Math.max(this.camera.scale,3000)};
+    this.clampCamera();this.requestFrame();
+  }
   setScenario(water: number, shade: number, grid: boolean) { this.water = water; this.shade = shade; this.grid = grid; this.requestFrame(); }
   private worldAt(x: number, y: number) { return { x: (x - this.origin[0]) / this.camera.scale + this.camera.x, y: (y - this.origin[1]) / this.camera.scale + this.camera.y }; }
   private relative(event: PointerEvent | WheelEvent) { const r = this.canvas.getBoundingClientRect(); return { x: event.clientX-r.left, y: event.clientY-r.top }; }

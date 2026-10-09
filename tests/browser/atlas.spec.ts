@@ -9,7 +9,10 @@ test('GPU map, scenario controls, numeric inspection, reset and error-free navig
   await page.setViewportSize({width:1440,height:1000});await page.goto('/');
   await expect(page.getByTestId('ocean-coverage')).toHaveText(`${manifest.defaultCoverage.toFixed(2)}%`);
   await expect(page.getByRole('status',{name:'Map data status'})).toContainText('NASA MOLA');
-  await page.waitForTimeout(2000);
+  await page.waitForLoadState('networkidle');
+  // Keep terrain pixels and numeric clicks independent of the interactive overlay.
+  await page.getByRole('checkbox',{name:'Feature labels',exact:true}).uncheck();
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   const canvas=page.locator('canvas');
   await canvas.screenshot({path:'test-results/atlas-map.png'});
   const rect=(await canvas.boundingBox())!;
@@ -25,6 +28,7 @@ test('GPU map, scenario controls, numeric inspection, reset and error-free navig
   const numeric=(text:string)=>Number(text.replaceAll('−','-').replaceAll(',','').replace(' m',''));
   expect(numeric(await page.getByTestId('terrain-elevation').innerText())).toBe(elevation);
   expect(numeric(await page.getByTestId('water-depth').innerText())).toBe(Math.max(0,manifest.defaultWaterM-elevation));
+  await page.getByRole('checkbox',{name:'Feature labels',exact:true}).check();
   let tileRequests=0;page.on('request',request=>{if(request.url().includes('/data/tiles/'))tileRequests++;});
   await slider(page,'Ocean coverage',0);await expect(page.getByTestId('ocean-coverage')).toHaveText('0.00%');
   await slider(page,'Ocean coverage',100);await expect(page.getByTestId('ocean-coverage')).toHaveText('100.00%');

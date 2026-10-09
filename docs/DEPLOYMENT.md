@@ -2,6 +2,8 @@
 
 The application exports to `out/` with Next.js `output: 'export'`. All map interaction, WebGL rendering, numeric inspection, and area-weighted ocean calculations run in the browser. No API server, database, Python runtime, NASA download, or environment secrets are required in production. Host at a domain root; the current `/data/…` URLs are deliberately root-relative, so a GitHub Pages project subdirectory would require a separate base-path change.
 
+The atlas is now deployed on Vercel. For the existing connected project, use the future-update workflow below; the repository-creation/import steps are retained for setting up another copy. The nomenclature addition uses the same static export and needs no hosting setting changes.
+
 ## 1. Verify locally
 
 Use Node 24 (`nvm install && nvm use` if you use nvm):
@@ -33,7 +35,7 @@ Python scientific checks need NumPy, Pillow, and GDAL. The four derived-grid int
 
 In GitHub, choose **New repository**, name it `mars-ocean-atlas`, and choose your personal account as owner. Public is convenient for sharing the code; the Vercel website can also be public when its source repository is private. Do not initialize the remote with a README, license, or .gitignore, because those files already exist locally. Choose a license separately if you want to license your application code; NASA source attribution is retained in the project.
 
-The local Git repository is initialized on `main`; it has no commits or remote configured. Before the first commit:
+For a new repository on `main`, before the first commit:
 
 ```bash
 cd /home/ayabp/mars
@@ -51,7 +53,7 @@ git remote add origin https://github.com/YOUR_USERNAME/mars-ocean-atlas.git
 git push -u origin main
 ```
 
-Replace `YOUR_USERNAME` with your GitHub username and use the exact remote URL displayed by GitHub. Authenticate through your Git credential helper, SSH, or GitHub CLI; do not embed tokens in files or URLs. These commands are instructions for you to execute when ready. No remote repository creation or push was performed during preparation.
+Replace `YOUR_USERNAME` with your GitHub username and use the exact remote URL displayed by GitHub. Authenticate through your Git credential helper, SSH, or GitHub CLI; do not embed tokens in files or URLs. These commands are instructions for you to execute when ready. The nomenclature update has not been committed, pushed, or deployed automatically.
 
 ## 3. Import into Vercel
 
@@ -83,7 +85,7 @@ Open the production URL in a private/incognito browser where you are not logged 
 
 Verify:
 
-- The terrain appears, and `/data/manifest.json` returns JSON.
+- The terrain appears, `/data/manifest.json` returns JSON, and `/nomenclature/mars.json` returns the official feature snapshot.
 - `/data/tiles/4/31/15.png` returns a PNG (not an HTML error).
 - `/data/samples/31/15.f32` downloads 129,600 bytes and `/data/samples/31/15.u8` downloads 32,400 bytes.
 - Zoom through every resolution transition, fit the planet, and pan across the longitude seam.
@@ -110,7 +112,7 @@ git push
 
 ## Browser asset policy
 
-Commit **all of `public/data/`**, plus `docs/browser-assets.json`, source, config, lockfile, and docs. Current assets comprise 682 numeric RGBA PNG tiles, 512 float32 sample chunks, 512 quality chunks, and one manifest: **121,768,051 bytes (116.13 MiB)**. The filesystem's block-based `du` estimate is approximately 119 MiB. The largest individual file is the **801,179-byte manifest**. GitHub warns above 50 MiB and rejects files above 100 MiB; these files are well below both, so [Git LFS is unnecessary](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github). Avoid GitHub's browser upload workflow; push with Git.
+Commit **all of `public/data/` and `public/nomenclature/`**, plus `docs/browser-assets.json`, source, config, lockfile, and docs. Current assets comprise 682 numeric RGBA PNG tiles, 512 float32 sample chunks, 512 quality chunks, and one manifest: **121,768,051 bytes (116.13 MiB)**. The filesystem's block-based `du` estimate is approximately 119 MiB. The largest individual file is the **801,179-byte manifest**. GitHub warns above 50 MiB and rejects files above 100 MiB; these files are well below both, so [Git LFS is unnecessary](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github). Avoid GitHub's browser upload workflow; push with Git.
 
 Keep original NASA downloads (`20261009T122401589809/`), source rasters/archives, the approximately 98 MiB `derived/` directory, virtual environments, `node_modules`, `.next*`, `out/`, test screenshots/reports, `.vercel/`, and local environment files excluded. `.gitignore` and `.vercelignore` enforce this. Deployments consume already-validated browser assets; they never recreate the source dataset.
 
