@@ -1,0 +1,98 @@
+import {test,expect} from '@playwright/test';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {cellAt} from '../../lib/ocean.ts';
+const manifest=JSON.parse(readFileSync('public/data/manifest.json','utf8'));
+
+test('globe shares oceans, samples finest elevations, renders labels and stops when idle',async({page})=>{
+ test.setTimeout(120000);
+ await page.addInitScript(()=>{
+  const names=new WeakMap<WebGLUniformLocation,string>(),p=WebGL2RenderingContext.prototype,get=p.getUniformLocation,matrix=p.uniformMatrix4fv;
+  const gpuErrors:number[]=[];(window as unknown as {globeGpuErrors:number[]}).globeGpuErrors=gpuErrors;
+  const draw=p.drawElements;p.drawElements=function(...args:Parameters<WebGL2RenderingContext['drawElements']>){draw.apply(this,args);const error=this.getError();if(error!==this.NO_ERROR)gpuErrors.push(error);};
+  const matrices:Record<string,number[]>={};(window as unknown as {globeMatrices:Record<string,number[]>}).globeMatrices=matrices;
+  p.getUniformLocation=function(program,name){const location=get.call(this,program,name);if(location)names.set(location,name);return location;};
+  p.uniformMatrix4fv=function(location,transpose,data,...rest){const name=location&&names.get(location);if(name==='projectionMatrix'||name==='modelViewMatrix')matrices[name]=Array.from(data);matrix.call(this,location,transpose,data,...rest);};
+ });
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!m.location().url.endsWith('/favicon.ico'))errors.push(m.text());});
+ await page.setViewportSize({width:1440,height:1000});await page.goto('/');
+ await expect(page.getByRole('status',{name:'Map data status'})).toContainText('NASA MOLA');
+ await page.getByRole('slider',{name:'Ocean coverage',exact:true}).fill('50');
+ const coverage=await page.getByTestId('ocean-coverage').innerText(),water=await page.getByTestId('water-elevation').innerText();
+ await page.getByRole('button',{name:'3D Globe',exact:true}).click();
+ await expect(page.getByRole('status',{name:'Map data status'})).toContainText('MOLA globe');
+ await expect(page.getByTestId('ocean-coverage')).toHaveText(coverage);await expect(page.getByTestId('water-elevation')).toHaveText(water);
+ const canvas=page.locator('canvas');await page.waitForLoadState('networkidle');
+ await expect(page.getByRole('button',{name:'Feature: Olympus Mons',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Feature: Valles Marineris',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Feature: Hellas Planitia',exact:true})).toHaveCount(0);
+ await page.getByRole('checkbox',{name:'Feature labels',exact:true}).uncheck();
+ const rect=(await canvas.boundingBox())!,x=(rect.width-330)/2,y=rect.height/2-25;
+ await page.mouse.click(rect.x+x,rect.y+y);
+ await expect(page.getByTestId('terrain-elevation')).toBeVisible();
+ const coords=await page.locator('.inspection-coordinates').innerText();
+ // Default camera faces 12.03°N, 260.03°E; analytic sphere picking is independent of display LOD.
+ expect(coords).toContain('12.03°N');expect(coords).toContain('260.03°E');
+ const cell=cellAt(manifest,12.03,260.03),size=manifest.tileSize;
+ const bytes=readFileSync(`public/data/samples/${Math.floor(cell.x/size)}/${Math.floor(cell.y/size)}.f32`);
+ const numeric=(t:string)=>Number(t.replaceAll('−','-').replaceAll(',','').replace(' m',''));
+ expect(numeric(await page.getByTestId('terrain-elevation').innerText())).toBe(bytes.readFloatLE(((cell.y%size)*size+cell.x%size)*4));
+ await page.getByRole('slider',{name:'Ocean coverage',exact:true}).fill('0');await expect(page.getByTestId('ocean-coverage')).toHaveText('0.00%');
+ await page.getByRole('slider',{name:'Ocean coverage',exact:true}).fill('100');await expect(page.getByTestId('ocean-coverage')).toHaveText('100.00%');
+ await expect.poll(async()=>numeric(await page.getByTestId('water-depth').innerText())).toBe(manifest.waterMaximumM-bytes.readFloatLE(((cell.y%size)*size+cell.x%size)*4));
+ await page.getByRole('button',{name:'Reset to 71%'}).click();await expect(page.getByTestId('ocean-coverage')).toHaveText(`${manifest.defaultCoverage.toFixed(2)}%`);
+ await page.getByRole('checkbox',{name:'Feature labels',exact:true}).check();
+
+ // A static scene schedules no permanent animation loop, after tiles and damping settle.
+ await expect.poll(()=>canvas.getAttribute('data-globe-missing'),{timeout:45000}).toBe('0');
+ await expect.poll(()=>canvas.getAttribute('data-globe-pending'),{timeout:45000}).toBe('0');
+ await page.waitForTimeout(300);
+ const frame=await canvas.getAttribute('data-globe-frame');await page.waitForTimeout(600);expect(await canvas.getAttribute('data-globe-frame')).toBe(frame);
+ await page.getByRole('checkbox',{name:'Feature labels',exact:true}).uncheck();
+ await canvas.screenshot({path:'test-results/globe-terrain.png'});
+ writeFileSync('test-results/globe-view.json',JSON.stringify({width:rect.width,height:rect.height,level:Number(await canvas.getAttribute('data-globe-level')),scale:2*Math.PI*rect.height/(2*Math.tan(Math.PI/8)*(Math.sqrt(1+(rect.height/Math.tan(Math.PI/8)/Math.min(rect.width-410,rect.height-200))**2)-1)),matrices:await page.evaluate(()=>(window as unknown as {globeMatrices:Record<string,number[]>}).globeMatrices)}));
+ await page.getByRole('checkbox',{name:'Feature labels',exact:true}).check();
+ await page.waitForTimeout(100);await page.screenshot({path:'test-results/globe-desktop.png'});
+ expect(Number(await canvas.getAttribute('data-globe-texture-bytes'))).toBeLessThan(40*1024**2);
+ await page.getByRole('button',{name:'Zoom in',exact:true}).click();await page.waitForTimeout(500);
+ await page.getByRole('button',{name:'Reset globe camera'}).click();
+ await page.getByRole('slider',{name:'Water elevation',exact:true}).fill('1234.5');
+ const returnCoverage=await page.getByTestId('ocean-coverage').innerText(),returnWater=await page.getByTestId('water-elevation').innerText();
+ await page.getByRole('button',{name:'2D Map',exact:true}).click();
+ await expect(page.getByRole('status',{name:'Map data status'})).toContainText('NASA MOLA');
+ await expect(page.getByTestId('ocean-coverage')).toHaveText(returnCoverage);
+ await expect(page.getByTestId('water-elevation')).toHaveText(returnWater);
+ expect(errors).toEqual([]);
+ expect(await page.evaluate(()=>(window as unknown as {globeGpuErrors:number[]}).globeGpuErrors)).toEqual([]);
+});
+
+test('mobile globe, feature search and rotation do not conflict with sliders',async({page})=>{
+ test.setTimeout(90000);await page.setViewportSize({width:390,height:844});await page.goto('/');
+ await page.getByRole('button',{name:'3D Globe',exact:true}).click();
+ await expect(page.getByRole('status',{name:'Map data status'})).toContainText('MOLA globe');
+ await page.getByRole('button',{name:'Find & filter'}).click();await page.getByRole('searchbox',{name:'Find a Martian feature'}).fill('Hellas');
+ await page.getByRole('list',{name:'Feature search results'}).getByRole('button',{name:/Hellas Planitia/}).click();
+ await expect(page.getByRole('button',{name:'Feature: Hellas Planitia',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Close feature information'}).click();
+ await page.getByRole('checkbox',{name:'Feature labels',exact:true}).uncheck();
+ const canvas=page.locator('canvas'),r=(await canvas.boundingBox())!;
+ await page.mouse.move(r.x+r.width/2,r.y+r.height/2);await page.mouse.down();await page.mouse.move(r.x+r.width/2+60,r.y+r.height/2+20,{steps:8});await page.mouse.up();
+ const touch=await page.context().newCDPSession(page);
+ await touch.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});
+ await page.getByRole('button',{name:'Reset globe camera'}).click();
+ const longitude=Number(await canvas.getAttribute('data-globe-longitude'));
+ const cx=r.x+r.width/2,cy=r.y+r.height/2;
+ await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx,y:cy,id:1}]});
+ await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx+50,y:cy+10,id:1}]});
+ await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await expect.poll(async()=>Math.abs(Number(await canvas.getAttribute('data-globe-longitude'))-longitude)).toBeGreaterThan(1);
+ const distance=Number(await canvas.getAttribute('data-globe-distance'));
+ await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx-30,y:cy,id:1},{x:cx+30,y:cy,id:2}]});
+ await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-55,y:cy,id:1},{x:cx+55,y:cy,id:2}]});
+ await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await expect.poll(async()=>Number(await canvas.getAttribute('data-globe-distance'))).toBeLessThan(distance);
+ await touch.detach();
+ await page.getByRole('slider',{name:'Ocean coverage',exact:true}).fill('0');await expect(page.getByTestId('ocean-coverage')).toHaveText('0.00%');
+ await page.getByRole('button',{name:'Reset globe camera'}).click();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+ await page.screenshot({path:'test-results/globe-mobile.png'});
+});

@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { coverageAt, heightAt, coordinates, signedMeters, waterDepth, type Manifest } from '@/lib/ocean';
+import type { GlobeRenderer } from '@/lib/globe-renderer';
+import type { View } from '@/lib/labels';
 import FeatureLabels from './FeatureLabels';
 import { MarsRenderer, type Inspection, type Location } from '@/lib/renderer';
 
@@ -13,7 +15,8 @@ const areaText = (value: number) => `${(value / 1e6).toFixed(2)} million`;
 export default function MarsAtlas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  const rendererRef = useRef<MarsRenderer | null>(null);
+  const rendererRef = useRef<MarsRenderer | GlobeRenderer | null>(null);
+  const [mode,setMode]=useState<'map'|'globe'>('map');
   const [data, setData] = useState<Manifest | null>(null);
   const [water, setWater] = useState(0);
   const [shade, setShade] = useState(.85);
@@ -24,7 +27,8 @@ export default function MarsAtlas() {
   const [error, setError] = useState('');
   const [about, setAbout] = useState(false);
   const [target, setTarget] = useState(71);
-  const [view, setView] = useState({ x: .5, y: .25, scale: 1000, width: 1000, height: 600 });
+  const [view, setView] = useState<View>({ x: .5, y: .25, scale: 1000, width: 1000, height: 600 });
+  const scenarioRef=useRef({water,shade,grid});scenarioRef.current={water,shade,grid};
   useEffect(() => {
     const controller = new AbortController();
     fetch('/data/manifest.json', { signal: controller.signal }).then(response => {
@@ -38,15 +42,22 @@ export default function MarsAtlas() {
   }, []);
   useEffect(() => {
     if(!data||!canvasRef.current)return;
-    let renderer: MarsRenderer;
-    try {
-      renderer=new MarsRenderer(canvasRef.current,data);rendererRef.current=renderer;
-      renderer.onLocation=setLocation;renderer.onInspect=result=>{setInspection(result);setError('');};
-      renderer.onStatus=setStatus;renderer.onError=setError;
-      renderer.onView=camera=>{const rect=canvasRef.current!.getBoundingClientRect();setView({...camera,width:rect.width,height:rect.height});};
-    }catch(e){setError(e instanceof Error?e.message:'Map initialization failed');return;}
-    return () => {renderer.destroy();rendererRef.current=null;};
-  }, [data]);
+    let disposed=false,renderer:MarsRenderer|GlobeRenderer|undefined;
+    setStatus(mode==='globe'?'Loading globe terrain…':'Loading planetary data…');setError('');setLocation(null);
+    const initialize=async()=>{
+      try {
+        const Renderer=mode==='globe'?(await import('@/lib/globe-renderer')).GlobeRenderer:MarsRenderer;
+        if(disposed)return;
+        renderer=new Renderer(canvasRef.current!,data);rendererRef.current=renderer;
+        renderer.onLocation=setLocation;renderer.onInspect=result=>{setInspection(result);setError('');};
+        renderer.onStatus=setStatus;renderer.onError=setError;
+        renderer.onView=(camera:Pick<View,'x'|'y'|'scale'>&Partial<View>)=>{const rect=canvasRef.current!.getBoundingClientRect();setView({...camera,width:rect.width,height:rect.height});};
+        const scenario=scenarioRef.current;renderer.setScenario(scenario.water,scenario.shade,scenario.grid);
+      }catch(e){if(!disposed)setError(e instanceof Error?e.message:'Map initialization failed');}
+    };
+    void initialize();
+    return ()=>{disposed=true;renderer?.destroy();rendererRef.current=null;};
+  }, [data,mode]);
   useEffect(()=>{rendererRef.current?.setScenario(water,shade,grid);},[water,shade,grid]);
   useEffect(() => {
     if (!about) return;
@@ -70,7 +81,7 @@ export default function MarsAtlas() {
     let dx=longitude/360-view.x;dx-=Math.round(dx);
     return {x:originX+dx*view.scale,y:originY+((90-latitude)/360-view.y)*view.scale};
   };
-  const marker=inspection?project(inspection.latitude,inspection.longitude):null;
+  const marker=inspection?(view.project?view.project(inspection.latitude,inspection.longitude):project(inspection.latitude,inspection.longitude)):null;
   const reset=()=>{if(data){setWater(data.defaultWaterM);setTarget(71);}};
   const setCoverage=(percent:number)=>{if(data){setTarget(percent);setWater(heightAt(data,percent));}};
   const setHeight=(height:number)=>{setWater(height);setTarget(data?coverageAt(data,height):0);};
@@ -79,16 +90,17 @@ export default function MarsAtlas() {
       <div className="brand"><div className="planet-icon" aria-hidden="true"><span/></div><div><h1>Mars <span>Ocean Atlas</span></h1><p>PLANETARY TOPOGRAPHY LAB</p></div></div>
       <div className="header-right"><span className="source-badge"><i/> NASA MOLA <span>·</span> REAL ELEVATION DATA</span><button className="about-button" onClick={()=>setAbout(true)}><Icon name="info"/><span>About this map</span></button></div>
     </header>
-    <section className="map-stage" aria-label="Interactive Mars elevation map">
-      <canvas ref={canvasRef} tabIndex={0} aria-label="Mars map. Drag to pan, scroll or pinch to zoom. Arrow keys pan; plus and minus zoom; zero fits the planet. Click terrain to inspect elevation."/>
-      <svg className="map-rulers" aria-hidden="true">
+    <section className={`map-stage ${mode==='globe'?'globe-mode':''}`} aria-label="Interactive Mars elevation map">
+      <canvas key={mode} ref={canvasRef} tabIndex={0} aria-label={mode==='globe'?'Mars globe. Drag to rotate, scroll or pinch to zoom. Click terrain to inspect elevation.':"Mars map. Drag to pan, scroll or pinch to zoom. Arrow keys pan; plus and minus zoom; zero fits the planet. Click terrain to inspect elevation."}/>
+      {mode==='map'&&<svg className="map-rulers" aria-hidden="true">
         {[60,30,0,-30,-60].map(lat=>{const y=project(lat,180).y;return y>25&&y<view.height-90?<g key={lat}><text x="17" y={y}>{lat===0?'EQ':`${Math.abs(lat)}°${lat>0?'N':'S'}`}</text></g>:null;})}
         {[0,60,120,180,240,300].map(lon=>{const point=project(-90,lon);return point.x>35&&point.x<view.width-35&&point.y>0&&point.y<view.height-90?<text key={lon} x={point.x} y={point.y+20} textAnchor="middle">{lon}°E</text>:null;})}
-      </svg>
+      </svg>}
+      <div className="view-toggle" role="group" aria-label="Map view"><button aria-pressed={mode==='map'} onClick={()=>setMode('map')}>2D Map</button><button aria-pressed={mode==='globe'} onClick={()=>setMode('globe')}>3D Globe</button></div>
       <FeatureLabels view={view} onLocate={feature=>rendererRef.current?.locate(feature.latitude,feature.longitude)}/>
       <div className="map-title"><span className="eyebrow">A DIFFERENT BLUE PLANET</span><h2>What if Mars<br/>had oceans?</h2><p>Explore the terrain. Raise the water.<br/>Discover a world beneath the surface.</p></div>
       <div className="map-actions" aria-label="Map navigation">
-        <button aria-label="Zoom in" onClick={()=>rendererRef.current?.zoom(1.5)}><Icon name="plus"/></button><button aria-label="Zoom out" onClick={()=>rendererRef.current?.zoom(1/1.5)}><Icon name="minus"/></button><button aria-label="Fit entire planet" onClick={()=>rendererRef.current?.fit()}><Icon name="fit"/></button>
+        <button aria-label="Zoom in" onClick={()=>rendererRef.current?.zoom(1.5)}><Icon name="plus"/></button><button aria-label="Zoom out" onClick={()=>rendererRef.current?.zoom(1/1.5)}><Icon name="minus"/></button><button aria-label={mode==='globe'?'Reset globe camera':'Fit entire planet'} onClick={()=>rendererRef.current?.fit()}><Icon name="fit"/></button>
       </div>
       {marker && <div className="inspection-pin" style={{left:marker.x,top:marker.y}} aria-hidden="true"><span/></div>}
       <aside className="simulation-panel" aria-label="Ocean simulation controls">
@@ -106,8 +118,8 @@ export default function MarsAtlas() {
         {inspection?<><div className="inspection-heading"><span className="eyebrow">TERRAIN INSPECTION</span><button aria-label="Close terrain inspection" onClick={()=>setInspection(null)}><Icon name="cross"/></button></div><strong className="inspection-coordinates">{coordinates(inspection.latitude,inspection.longitude)}</strong><div className="inspection-values"><div><span>ELEVATION</span><strong data-testid="terrain-elevation">{signedMeters(inspection.elevation)} <small>m</small></strong></div><div><span>{inspection.elevation<water?'WATER DEPTH':'SURFACE'}</span><strong data-testid="water-depth">{inspection.elevation<water?`${waterDepth(water,inspection.elevation).toLocaleString('en-US',{maximumFractionDigits:3})} m`:'Exposed land'}</strong></div></div><p>{inspection.quality%2?'Observed source bin':'Interpolated in NASA source'}{inspection.quality>=2?' · polar MEGT':''} · nearest {data?.ppd} px/° cell</p></>:<><span className="inspection-prompt">⌖</span><div><strong>Every point has a story.</strong><p>Click the map to inspect elevation and depth.</p></div></>}
       </div>
       {error&&<div role="alert" className="error-message"><Icon name="info"/><span>{error}</span><button onClick={()=>setError('')} aria-label="Dismiss message"><Icon name="cross"/></button></div>}
-      <footer className="map-footer"><span className="status" role="status" aria-label="Map data status"><i/>{status}</span><span className="cursor-coordinate">{location?coordinates(location.latitude,location.longitude):'Drag to explore · scroll to zoom'}</span><span className="projection-badge">EQUIRECTANGULAR · MARS</span></footer>
+      <footer className="map-footer"><span className="status" role="status" aria-label="Map data status"><i/>{status}</span><span className="cursor-coordinate">{location?coordinates(location.latitude,location.longitude):mode==='globe'?'Drag to rotate · scroll to zoom':'Drag to explore · scroll to zoom'}</span><span className="projection-badge">{mode==='globe'?'SPHERE · MARS':'EQUIRECTANGULAR · MARS'}</span></footer>
     </section>
-    {about&&<div className="modal-backdrop" onClick={()=>setAbout(false)}><section ref={dialogRef} className="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-title" onClick={e=>e.stopPropagation()}><button className="modal-close" aria-label="Close about dialog" onClick={()=>setAbout(false)} autoFocus><Icon name="cross"/></button><span className="eyebrow">THE SCIENCE BEHIND THE MAP</span><h2 id="about-title">Real terrain. Imagined oceans.</h2><p>NASA’s Mars Global Surveyor measured the elevation of Mars with the MOLA laser altimeter. This atlas samples the 128 px/° topography, with 512 px/° polar topography filling the caps, onto a {data?.ppd} px/° global grid.</p><p>Water covers cells whose elevation is strictly below the selected level. Coverage uses the exact spherical area of each latitude row, with the dataset’s 3,396 km reference radius. Isolated depressions flood too; this is not a simulation of connected oceans, climate, or hydrology.</p><p>The 71% target reaches <strong>{data?.defaultCoverage.toFixed(4)}%</strong> at <strong>{data? signedMeters(data.defaultWaterM):'—'} m</strong>. A finite raster changes coverage in discrete steps, so an exact 71.0000% is not always possible.</p><p>Land colors use fixed areoid elevations. Blue colors use water depth. Hillshade uses four light directions and Mars ground distances; the shading control only changes appearance. At low zoom, nearest-sampled overviews simplify small coastlines. Clicks always inspect the finest processed grid.</p><p>Nominal grid spacing is ~{data?.gridApproximationKm.toFixed(2)} km at the equator. NASA’s interpolated bins are retained and marked. Polar products differ from cylindrical data at overlapping locations; the transition is not blended. This map does not provide survey-grade local elevation accuracy.</p><a href="https://pds-geosciences.wustl.edu/missions/mgs/mola.html" target="_blank" rel="noreferrer">MOLA archive & mission documentation ↗</a><button className="primary-button" onClick={()=>setAbout(false)}>Back to the atlas</button></section></div>}
+    {about&&<div className="modal-backdrop" onClick={()=>setAbout(false)}><section ref={dialogRef} className="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-title" onClick={e=>e.stopPropagation()}><button className="modal-close" aria-label="Close about dialog" onClick={()=>setAbout(false)} autoFocus><Icon name="cross"/></button><span className="eyebrow">THE SCIENCE BEHIND THE MAP</span><h2 id="about-title">Real terrain. Imagined oceans.</h2><p>NASA’s Mars Global Surveyor measured the elevation of Mars with the MOLA laser altimeter. This atlas samples the 128 px/° topography, with 512 px/° polar topography filling the caps, onto a {data?.ppd} px/° global grid.</p><p>Water covers cells whose elevation is strictly below the selected level. Coverage uses the exact spherical area of each latitude row, with the dataset’s 3,396 km reference radius. Isolated depressions flood too; this is not a simulation of connected oceans, climate, or hydrology.</p><p>The 71% target reaches <strong>{data?.defaultCoverage.toFixed(4)}%</strong> at <strong>{data? signedMeters(data.defaultWaterM):'—'} m</strong>. A finite raster changes coverage in discrete steps, so an exact 71.0000% is not always possible.</p><p>Land colors use fixed areoid elevations. Blue colors use water depth. Hillshade uses four light directions and Mars ground distances; the shading control only changes appearance. At low zoom, nearest-sampled overviews simplify small coastlines. Clicks always inspect the finest processed grid.</p><p>The 3D globe is a smooth reference sphere. Elevations control color and hillshade, without geometric terrain displacement. Both views share the same scientific heights and ocean scenario.</p><p>Nominal grid spacing is ~{data?.gridApproximationKm.toFixed(2)} km at the equator. NASA’s interpolated bins are retained and marked. Polar products differ from cylindrical data at overlapping locations; the transition is not blended. This map does not provide survey-grade local elevation accuracy.</p><a href="https://pds-geosciences.wustl.edu/missions/mgs/mola.html" target="_blank" rel="noreferrer">MOLA archive & mission documentation ↗</a><button className="primary-button" onClick={()=>setAbout(false)}>Back to the atlas</button></section></div>}
   </main>;
 }

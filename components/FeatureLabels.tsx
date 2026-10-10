@@ -23,7 +23,7 @@ export default function FeatureLabels({view,onLocate}:{view:View;onLocate:(featu
     if(!root.current||!catalog||!enabled){setLabels([]);previous.current.clear();return;}
     const stage=root.current.parentElement!,rect=stage.querySelector('canvas')!.getBoundingClientRect();
     const obstacles:Box[]=[];
-    for(const element of stage.querySelectorAll('.map-title,.simulation-panel,.legend-panel,.inspection-card,.map-actions,.map-footer,.label-controls,.feature-popup')){
+    for(const element of stage.querySelectorAll('.view-toggle,.map-title,.simulation-panel,.legend-panel,.inspection-card,.map-actions,.map-footer,.label-controls,.feature-popup')){
       const b=element.getBoundingClientRect();obstacles.push({left:b.left-rect.left-6,top:b.top-rect.top-6,right:b.right-rect.left+6,bottom:b.bottom-rect.top+6});
     }
     const context=document.createElement('canvas').getContext('2d')!;context.font='600 12px Arial';

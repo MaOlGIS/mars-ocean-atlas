@@ -1,10 +1,11 @@
 import type { Manifest } from './ocean';
-import { cellAt, wrapLongitude } from './ocean';
+import { wrapLongitude } from './ocean';
 
+import { terrainFragment } from './terrain-shader';
+import { ElevationSampler, type Location, type Inspection } from './sampling';
+export type { Location, Inspection } from './sampling';
 type Camera = { x: number; y: number; scale: number };
 type Tile = { z: number; x: number; y: number; texture: WebGLTexture; used: number };
-export type Location = { latitude: number; longitude: number };
-export type Inspection = Location & { elevation: number; quality: number; cellLatitude: number; cellLongitude: number };
 
 const vertex = `#version 300 es
 in vec2 position;
@@ -19,50 +20,7 @@ void main(){
   vec2 pixel=(world-camera.xy)*camera.z+origin;
   gl_Position=vec4(pixel.x/resolution.x*2.0-1.0,1.0-pixel.y/resolution.y*2.0,0.0,1.0);
 }`;
-const fragment = `#version 300 es
-precision highp float;
-uniform sampler2D terrain;
-uniform float water;
-uniform float shadeIntensity;
-uniform float graticule;
-uniform float pixelScale;
-in vec2 uv;
-in vec2 world;
-out vec4 color;
-vec3 blend(float e,float a,float b,vec3 c,vec3 d){return mix(c,d,clamp((e-a)/(b-a),0.0,1.0));}
-vec3 land(float e){
- if(e< -4000.0)return blend(e,-8300.0,-4000.0,vec3(.065,.22,.14),vec3(.16,.40,.22));
- if(e<0.0)return blend(e,-4000.0,0.0,vec3(.16,.40,.22),vec3(.49,.64,.32));
- if(e<4000.0)return blend(e,0.0,4000.0,vec3(.49,.64,.32),vec3(.91,.83,.43));
- if(e<8000.0)return blend(e,4000.0,8000.0,vec3(.91,.83,.43),vec3(.83,.51,.24));
- if(e<14000.0)return blend(e,8000.0,14000.0,vec3(.83,.51,.24),vec3(.46,.31,.24));
- return blend(e,14000.0,22000.0,vec3(.46,.31,.24),vec3(.96,.95,.90));
-}
-vec3 sea(float depth){
- if(depth<1000.0)return blend(depth,0.0,1000.0,vec3(.57,.82,.85),vec3(.25,.64,.75));
- if(depth<4000.0)return blend(depth,1000.0,4000.0,vec3(.25,.64,.75),vec3(.08,.38,.59));
- return blend(depth,4000.0,12000.0,vec3(.08,.38,.59),vec3(.035,.14,.29));
-}
-float elevation(ivec2 p){vec3 b=texelFetch(terrain,clamp(p,ivec2(0),textureSize(terrain,0)-1),0).rgb*255.0;return (dot(round(b),vec3(65536.,256.,1.))-40000.0)*.25;}
-void main(){
- ivec2 size=textureSize(terrain,0); ivec2 p=clamp(ivec2(uv*vec2(size)),ivec2(0),size-1);
- float e=elevation(p); float depth=max(0.0,water-e); bool wet=e<water;
- float shade=texelFetch(terrain,p,0).a;
- vec3 c=wet?sea(depth):land(e);
- // Flat terrain shade is sin(45 degrees); equal baseline on land and ocean.
- float relief=clamp(1.0+(shade-.7071)*(wet?.32:1.7)*shadeIntensity,.45,1.25);
- c*=relief;
- // Thin land-side coast outline, only when the encoded neighbor actually crosses H.
- bool coast=!wet && (elevation(p+ivec2(1,0))<water || elevation(p+ivec2(-1,0))<water || elevation(p+ivec2(0,1))<water || elevation(p+ivec2(0,-1))<water);
- if(coast)c=mix(c,vec3(.12,.29,.25),.38);
- if(graticule>0.5){
-   vec2 degrees=vec2(world.x*360.0,90.0-world.y*360.0);
-   vec2 nearest=abs(mod(degrees+15.0,30.0)-15.0);
-   float line=1.0-smoothstep(0.0,360.0/pixelScale*.8,min(nearest.x,nearest.y));
-   c=mix(c,vec3(.90,.93,.90),line*.18);
- }
- color=vec4(c,1.0);
-}`;
+
 
 /** A native equirectangular tile plane. No Earth EPSG, Mercator, or Earth distance math. */
 export class MarsRenderer {
@@ -73,7 +31,7 @@ export class MarsRenderer {
   private pending = new Set<string>();
   private failed = new Map<string, number>();
   private controller = new AbortController();
-  private sampleCache = new Map<string, Promise<{ values: DataView; quality: Uint8Array }>>();
+  private sampler: ElevationSampler;
   private camera: Camera = { x: .5, y: .25, scale: 1000 };
   private width = 1; private height = 1; private origin = [0, 0];
   private water: number; private shade = .8; private grid = true;
@@ -93,13 +51,13 @@ export class MarsRenderer {
   constructor(private canvas: HTMLCanvasElement, private data: Manifest) {
     const gl = canvas.getContext('webgl2', { alpha: false, antialias: true, preserveDrawingBuffer: false });
     if (!gl) throw new Error('WebGL 2 is unavailable. Enable hardware acceleration or use a browser with WebGL 2 support.');
-    this.gl = gl; this.water = data.defaultWaterM;
+    this.gl = gl; this.water = data.defaultWaterM; this.sampler=new ElevationSampler(data,this.controller.signal);
     const compile = (type: number, text: string) => {
       const shader = gl.createShader(type)!; gl.shaderSource(shader, text); gl.compileShader(shader);
       if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) || 'Shader compile failed');
       return shader;
     };
-    const vs = compile(gl.VERTEX_SHADER, vertex), fs = compile(gl.FRAGMENT_SHADER, fragment);
+    const vs = compile(gl.VERTEX_SHADER, vertex), fs = compile(gl.FRAGMENT_SHADER, terrainFragment);
     this.program = gl.createProgram()!; gl.attachShader(this.program, vs); gl.attachShader(this.program, fs); gl.linkProgram(this.program);
     gl.deleteShader(vs); gl.deleteShader(fs);
     if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(this.program) || 'Shader link failed');
@@ -230,27 +188,17 @@ export class MarsRenderer {
     this.onView?.({...this.camera});
   }
   private async inspect(location: Location) {
-    const id=++this.sampleId,{x,y}=cellAt(this.data,location.latitude,location.longitude),size=this.data.tileSize;
-    const tx=Math.floor(x/size),ty=Math.floor(y/size),key=`${tx}/${ty}`,index=(y%size)*size+x%size;
-    try{
-      if(!this.sampleCache.has(key)){
-        const request=Promise.all([fetch(`/data/samples/${key}.f32`,{signal:this.controller.signal}),fetch(`/data/samples/${key}.u8`,{signal:this.controller.signal})]).then(async responses=>{
-          if(responses.some(r=>!r.ok))throw new Error('Elevation lookup failed');
-          const [values,quality]=await Promise.all(responses.map(r=>r.arrayBuffer()));
-          if(values.byteLength!==size*size*4||quality.byteLength!==size*size)throw new Error('Unexpected sample tile length');
-          return {values:new DataView(values),quality:new Uint8Array(quality)};
-        }).catch(error=>{this.sampleCache.delete(key);throw error;});
-        this.sampleCache.set(key,request);
-      }
-      const sample=await this.sampleCache.get(key)!;
-      if(this.sampleCache.size>24)this.sampleCache.delete(this.sampleCache.keys().next().value!);
-      if(this.destroyed||id!==this.sampleId)return;
-      this.onInspect?.({...location,elevation:sample.values.getFloat32(index*4,true),quality:sample.quality[index],cellLatitude:90-(y+.5)/this.data.ppd,cellLongitude:(x+.5)/this.data.ppd});
-    }catch(error){if(!this.destroyed)this.onError?.('Elevation could not be retrieved. Click again to retry.');}
+    const id=++this.sampleId;
+    try {
+      const sample=await this.sampler.sample(location);
+      if(!this.destroyed&&id===this.sampleId)this.onInspect?.(sample);
+    } catch {if(!this.destroyed)this.onError?.('Elevation could not be retrieved. Click again to retry.');}
   }
+
   destroy() {
     this.destroyed=true;this.controller.abort();cancelAnimationFrame(this.frame);clearTimeout(this.retryTimer);this.resizeObserver.disconnect();
     this.canvas.removeEventListener('pointerdown',this.down);this.canvas.removeEventListener('pointermove',this.move);this.canvas.removeEventListener('pointerup',this.up);this.canvas.removeEventListener('pointercancel',this.cancel);this.canvas.removeEventListener('pointerleave',this.leave);this.canvas.removeEventListener('wheel',this.wheel);this.canvas.removeEventListener('keydown',this.key);this.canvas.removeEventListener('webglcontextlost',this.contextLost);
     for(const tile of this.tiles.values())this.gl.deleteTexture(tile.texture);this.gl.deleteBuffer(this.buffer);this.gl.deleteProgram(this.program);
+    this.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }

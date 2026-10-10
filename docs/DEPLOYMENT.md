@@ -2,7 +2,7 @@
 
 The application exports to `out/` with Next.js `output: 'export'`. All map interaction, WebGL rendering, numeric inspection, and area-weighted ocean calculations run in the browser. No API server, database, Python runtime, NASA download, or environment secrets are required in production. Host at a domain root; the current `/data/…` URLs are deliberately root-relative, so a GitHub Pages project subdirectory would require a separate base-path change.
 
-The atlas is now deployed on Vercel. For the existing connected project, use the future-update workflow below; the repository-creation/import steps are retained for setting up another copy. The nomenclature addition uses the same static export and needs no hosting setting changes.
+The atlas is now deployed on Vercel. For the existing connected project, use the future-update workflow below; the repository-creation/import steps are retained for setting up another copy. The nomenclature and 3D globe additions use the same static export and need no hosting setting changes. Three.js is installed by npm ci; the globe reuses existing MOLA browser assets.
 
 ## 1. Verify locally
 

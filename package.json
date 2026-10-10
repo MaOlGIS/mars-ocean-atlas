@@ -7,7 +7,7 @@
     "build": "npm run verify:assets && next build && node scripts/verify-assets.mjs --export",
     "start": "node scripts/serve-static.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/ocean.test.ts tests/labels.test.ts",
+    "test": "node --experimental-strip-types --test tests/ocean.test.ts tests/labels.test.ts tests/globe.test.ts",
     "test:data": "python -m unittest discover -s tests -p 'test_*.py'",
     "process:data": "python scripts/process_mola.py",
     "test:browser": "playwright test",
@@ -19,14 +19,16 @@
   "dependencies": {
     "next": "^16.0.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "typescript": "^5.9.0",
-    "@playwright/test": "^1.56.0"
+    "@types/three": "^0.186.0",
+    "typescript": "^5.9.0"
   },
   "type": "module",
   "engines": {

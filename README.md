@@ -20,6 +20,10 @@ npm start
 
 The export is in `out/`; `npm start` serves those static files locally. The existing Vercel deployment uses the same static hosting architecture. There is no elevation server dependency: static hosting serves precomputed tiles and binary lookup chunks. See [exact GitHub and Vercel publishing instructions](docs/DEPLOYMENT.md). The optional Google Fonts CSS falls back to system fonts when offline.
 
+## Interactive 3D globe
+
+Use **2D Map / 3D Globe** to switch between the existing map and a Three.js sphere. Drag or touch to rotate, scroll or pinch to zoom, and click for exact MOLA elevation/depth. Both views share ocean coverage, water elevation, hillshade, and official feature controls. The globe streams the existing numeric tiles and starts with the same 71% scenario; it has no automatic spin or elevation displacement. See [implementation, scientific conventions, QA, and future displacement evaluation](docs/GLOBE.md). Static GitHub → Vercel deployment is unchanged.
+
 ## Geographical feature names
 
 A separate interactive layer displays official USGS / IAU Mars names, with zoom-dependent collision-free labels, type filters, feature information, and search. Feature names remain visible under hypothetical oceans. The committed 394 KB planetary JSON snapshot needs no live USGS service or deployment-time processing. See [source, coordinate verification, processing, and attribution](docs/NOMENCLATURE.md).

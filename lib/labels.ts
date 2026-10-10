@@ -1,6 +1,6 @@
 export type Feature = { id:number; name:string; type:string; code:string; longitude:number; latitude:number; sizeKm:number|null; bounds:[number,number,number,number]|null; approved:string };
 export type Catalog = {version:number; body:string; latitudeType:string; longitudeDirection:string; attribution:string; features:Feature[]};
-export type View = {x:number;y:number;scale:number;width:number;height:number};
+export type View = {x:number;y:number;scale:number;width:number;height:number;kind?:'globe';project?:(latitude:number,longitude:number)=>{x:number;y:number}|null};
 export type Box = {left:number;top:number;right:number;bottom:number};
 export type Label = {feature:Feature; key:string; x:number;y:number;box:Box};
 export const groups=['Mountains','Valleys','Plains','Craters','Other'] as const;
@@ -35,10 +35,11 @@ export function layoutLabels(features:Feature[],view:View,enabled:Set<Group>,mea
   const occupied=[...obstacles],result:Label[]=[],previousIds=new Set([...previous].map(key=>Number(key.split(':')[0])));
   for(const f of [...features].filter(f=>enabled.has(groupOf(f))).sort((a,b)=>(a.id===selected?-1:b.id===selected?1:importance(b)-importance(a)||a.id-b.id))){
     const width=measure(f.name)+12,height=24,threshold=minimumScale(f);
-    for(let copy=Math.ceil(left-f.longitude/360);copy<=Math.floor(right-f.longitude/360);copy++){
+    for(let copy=view.project?0:Math.ceil(left-f.longitude/360);copy<=(view.project?0:Math.floor(right-f.longitude/360));copy++){
       const key=`${f.id}:${copy}`;
       if(f.id!==selected&&view.scale<threshold*(previousIds.has(f.id)?.92:1))continue;
-      const {x,y}=projectFeature(f,view,copy),box={left:x-width/2,top:y-height/2,right:x+width/2,bottom:y+height/2};
+      const point=view.project?view.project(f.latitude,f.longitude):projectFeature(f,view,copy);if(!point)continue;
+      const {x,y}=point,box={left:x-width/2,top:y-height/2,right:x+width/2,bottom:y+height/2};
       if(box.left<8||box.right>view.width-8||box.top<8||box.bottom>view.height-36)continue;
       // Screen-space clearance includes a 4px cartographic breathing margin.
       const padded={left:box.left-4,top:box.top-4,right:box.right+4,bottom:box.bottom+4};
